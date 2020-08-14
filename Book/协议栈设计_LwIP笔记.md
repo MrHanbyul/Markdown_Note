@@ -75,6 +75,12 @@ struct netif{
 
 
 
+
+
+
+
+
+
 #### LWIP数据包收发函数框架
 
 low_level_input	low_level_output
@@ -215,22 +221,143 @@ static err_t update_arp_entry(struct netif *netif, struct ip_addr *ipaddr, struc
 
 #### IP层
 
+![image-20200813101800989](D:\Saber_Workshop\Personal\Doc\Markdown_Note\Book\协议栈设计_LwIP笔记.assets\image-20200813101800989.png)
+
+
+
 IP 数据报头  
 
 ```c
 struct ip_hdr {
-    PACK_STRUCT_FIELD(u16_t _v_hl_tos); // 前三个字段：版本号、首部长度、服务类型
-    PACK_STRUCT_FIELD(u16_t _len); // 总长度
-    PACK_STRUCT_FIELD(u16_t _id); // 标识字段
-    PACK_STRUCT_FIELD(u16_t _offset); // 3 位标志和 13 位片偏移字段
+    PACK_STRUCT_FIELD(u8_t _v_hl); 		// 前三个字段：版本号、首部长度
+      /* type of service */
+  	PACK_STRUCT_FIELD(u8_t _tos);		// 服务类型，描述该IP数据包急需的服务类型，如最小延时、最大吞吐量等
+    PACK_STRUCT_FIELD(u16_t _len); 		// 总长度，整个IP数据报，包括IP数据报头的总字节数
+    PACK_STRUCT_FIELD(u16_t _id); 		// 标识字段
+    PACK_STRUCT_FIELD(u16_t _offset);	// 3 位标志和 13 位片偏移字段;用于IP数据包分片时使用
     #define IP_RF 0x8000 //
     #define IP_DF 0x4000 // 不分组标识位掩码
     #define IP_MF 0x2000 // 后续有分组到来标识位掩码
     #define IP_OFFMASK 0x1fff // 获取 13 位片偏移字段的掩码
-    PACK_STRUCT_FIELD(u16_t _ttl_proto); // TTL 字段和协议字段
-    PACK_STRUCT_FIELD(u16_t _chksum); // 首部校验和字段
+    PACK_STRUCT_FIELD(u8_t _ttl); // TTL 字段,描述IP数据包最多能被转发的次数，为0时，一个ICMP报文会被返回至源主机
+    PACK_STRUCT_FIELD(u8_t _proto);// 协议字段， 1 ICMP, 2 ICMP, 6 TCP, 17 UDP
+    PACK_STRUCT_FIELD(u16_t _chksum); // 首部校验和字段,只针对IP首部做校验;它并不关心其内部数据在传输过程中出错与否对于数据的校验是上层协议负责的，如 ICMP、 IGMP、 TCP、 UDP 协议都会计算它们头部以及整个数据区的长度。
     PACK_STRUCT_FIELD(struct ip_addr src); // 源 IP 地址
     PACK_STRUCT_FIELD(struct ip_addr dest); // 目的 IP 地址
 } PACK_STRUCT_STRUCT;
+```
+
+
+
+#### ICMP处理(Internet 控制报文协议)
+
+控制消息是指网络通不通、主机是否可达、路由是否可用等网络本身的消息。  
+
+![image-20200813093725036](D:\Saber_Workshop\Personal\Doc\Markdown_Note\Book\协议栈设计_LwIP笔记.assets\image-20200813093725036.png)
+
+
+
+![image-20200813094641477](D:\Saber_Workshop\Personal\Doc\Markdown_Note\Book\协议栈设计_LwIP笔记.assets\image-20200813094641477.png)
+
+# TCPIP_Thread线程启动流程
+
+源码文件tcpip.c  tcpip.h
+
+```flow
+tcpip_init=>start: tcpip_init()
+lwip_init=>operation: lwip_init()
+cond_sys_mbox_now=>condition: if(sys_mbox_new()!=ERR_OK)
+op_LWIP_ASSERT=>operation: LWIP_ASSERT()
+op_start_tcpip_thread=>operation: sys_thread_new(...,tcpip_thread,...)
+
+
+tcpip_init->lwip_init->cond_sys_mbox_now
+cond_sys_mbox_now(no)->op_start_tcpip_thread
+cond_sys_mbox_now(yes)->op_LWIP_ASSERT->op_start_tcpip_thread
+
+```
+
+
+
+
+
+
+
+
+
+# **tcpip_thread主线程处理**
+
+```flow
+st=>start: tcpip_thread()
+cond_tcpip_init=>condition: if(tcpip_init_done!=NULL)
+op_tcpip_init=>operation: tcpip_init_done(tcpip_init_done_arg)
+cond_while=>condition: while(1)
+op_sys_mbox_fetch=>operation: sys_timeouts_mbox_fetch()
+op_msg_type=>operation: switch(msg->type)
+
+cond_tcpip_msg_api=>condition: TCPIP_MSG_API 
+cond_tcpip_msg_inpkt=>condition: TCPIP_MSG_INPKT
+cond_tcpip_msg_netifapi=>condition: TCPIP_MSG_NETIFAPI
+cond_tcpip_msg_timeout=>condition: TCPIP_MSG_TIMEOUT
+cond_tcpip_msg_untimeout=>condition: TCPIP_MSG_UNTIMEOUT
+cond_tcpip_msg_callback=>condition: TCPIP_MSG_CALLBACK
+cond_tcpip_msg_callback_static=>condition: TCPIP_MSG_CALLBACK_STATIC
+cond_default=>condition: default
+
+para_tcpip_msg_api=>parallel: msg->msg.apimsg->function()
+cond_netif_flags=>condition: if(msg->msg.inp.netif->flags)
+op_ethernet_input=>operation: ethernet_input()
+op_ip_input=>operation: ip_input()
+op_memp_free=>operation: memp_free()
+op_netifapimsg=>operation: msg->msg.netifapimsg->function()
+op_sys_timeout=>operation: sys_timeout()
+op_memp_free_timeout=>operation: memp_free()
+op_sys_untimeout=>operation: sys_untimeout()
+op_memp_free_untimeout=>operation: memp_free()
+op_msg_cb=>operation: msg->msg.cb.function()
+op_memp_free_callback=>operation: memp_free()
+op_msg_cb_static=>operation: msg->msg.cb.function()
+
+st->cond_tcpip_init
+cond_tcpip_init(no)->cond_while
+cond_tcpip_init(yes)->op_tcpip_init
+op_tcpip_init->cond_while
+cond_while(yes)->op_msg_type
+op_msg_type->cond_tcpip_msg_api
+
+cond_tcpip_msg_api(no)->cond_tcpip_msg_inpkt
+cond_tcpip_msg_api(yes, right)->para_tcpip_msg_api
+cond_tcpip_msg_inpkt(no)->cond_tcpip_msg_netifapi
+cond_tcpip_msg_inpkt(yes, right)->cond_netif_flags
+cond_tcpip_msg_netifapi(no)->cond_tcpip_msg_timeout
+cond_tcpip_msg_netifapi(yes, right)->op_netifapimsg
+cond_tcpip_msg_timeout(no)->cond_tcpip_msg_untimeout
+cond_tcpip_msg_timeout(yes, right)->op_sys_timeout
+cond_tcpip_msg_untimeout(no)->cond_tcpip_msg_callback
+cond_tcpip_msg_untimeout(yes, right)->op_sys_untimeout
+cond_tcpip_msg_callback(no)->cond_tcpip_msg_callback_static
+cond_tcpip_msg_callback(yes, right)->op_msg_cb
+cond_tcpip_msg_callback_static(no)->cond_default
+cond_tcpip_msg_callback_static(yes, right)->op_msg_cb_static
+
+para_tcpip_msg_api(path1, right)->cond_while
+op_netifapimsg(right)->cond_while
+op_sys_timeout->op_memp_free_timeout
+op_memp_free_timeout(right)->cond_while
+op_sys_untimeout->op_memp_free_untimeout
+op_memp_free_untimeout(right)->cond_while
+op_msg_cb->op_memp_free_callback
+op_memp_free_callback(right)->cond_while
+op_msg_cb_static(right)->cond_while
+cond_default(yes, right)->cond_while
+
+cond_netif_flags(yes)->op_ethernet_input
+cond_netif_flags(no)->op_ip_input
+op_ethernet_input->op_memp_free
+op_ip_input->op_memp_free
+op_memp_free(right)->cond_while
+
+
+
 ```
 

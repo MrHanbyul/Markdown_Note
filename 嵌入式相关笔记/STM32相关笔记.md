@@ -75,3 +75,12 @@ Embedded Memory
 
         要注意的是，一般不使用内置SRAM启动(BOOT1=1 BOOT0=1)，因为SRAM掉电后数据就丢失。多数情况下SRAM只是在调试时使用，也可以做其他一些用途。如做故障的局部诊断，写一段小程序加载到SRAM中诊断板上的其他电路，或用此方法读写板上的Flash或EEPROM等。还可以通过这种方法解除内部Flash的读写保护，当然解除读写保护的同时Flash的内容也被自动清除，以防止恶意的软件拷贝。
 一般BOOT0和BOOT1跳线都跳到0(地)
+
+
+
+
+
+#### [STM32F103ZET6程序向STM32F103C8T6移植](https://blog.csdn.net/weixin_44479800/article/details/104125346)
+
+#### [RT-Theard 配置报错No space in execution regions 和hard fault on handler](https://blog.csdn.net/abstract_think/article/details/102543372)
+

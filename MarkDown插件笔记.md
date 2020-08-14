@@ -19,8 +19,8 @@ para=>parallel: parallel tasks
 e=>end: End
 
 st->op->cond
-cond(yes)->io->e
 cond(no)->para
+cond(yes, right)->io->e
 para(path1, bottom)->sub(right)->op
 para(path2, top)->op
 ```
